@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./database.db"
+}
+
+// Enum disimpan sebagai TEXT di SQLite
+enum Role {
+  ADMIN
+  STAFF
+}
+
+enum MarketplaceType {
+  TOKOPEDIA
+  SHOPEE
+}
+
+enum OrderStatus {
+  NEW
+  PROCESSING
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
+enum SyncType {
+  ORDER_PULL
+  STOCK_PUSH
+  STATUS_UPDATE
+}
+
+enum SyncStatus {
+  SUCCESS
+  FAILED
+  PENDING
+}
+
+// 🔐 MODEL USER (Disesuaikan dengan sistem login lama)
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique          // Sesuaikan dengan field login lama
+  email     String?  @unique
+  password  String
+  fullName  String?
+  role      Role     @default(STAFF)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Jika tabel lama bernama berbeda, gunakan:
+  // @@map("nama_tabel_user_lama")
+}
+
+model Marketplace {
+  id            Int      @id @default(autoincrement())
+  type          MarketplaceType
+  shopName      String
+  shopId        String   @unique
+  apiKey        String
+  apiSecret     String
+  accessToken   String?
+  refreshToken  String?
+  tokenExpiry   DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders        Order[]
+  marketplaceProducts MarketplaceProduct[]
+  syncLogs      SyncLog[]
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  sku         String   @unique
+  name        String
+  description String?
+  price       Decimal  @default(0)
+  isActive    Boolean  @default(true)
+  stock       Stock?
+  marketplaceProducts MarketplaceProduct[]
+  orderItems  OrderItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Stock {
+  id        Int      @id @default(autoincrement())
+  productId Int      @unique
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(0)   // Stok fisik tersedia
+  reserved  Int      @default(0)   // Stok dipesan tapi belum shipped (cegah overselling)
+  updatedAt DateTime @updatedAt
+}
+
+model MarketplaceProduct {
+  id            Int         @id @default(autoincrement())
+  marketplaceId Int
+  marketplace   Marketplace @relation(fields: [marketplaceId], references: [id], onDelete: Cascade)
+  productId     Int
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketplaceItemId String  // item_id Tokopedia / shop_item_id Shopee
+  marketplaceSku String?    // SKU di marketplace (jika berbeda dengan SKU internal)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([marketplaceId, marketplaceItemId])
+}
+
+model Order {
+  id            Int           @id @default(autoincrement())
+  marketplaceId Int
+  marketplace   Marketplace   @relation(fields: [marketplaceId], references: [id])
+  marketplaceOrderId String   @unique // ID pesanan dari Tokopedia/Shopee
+  customerName  String
+  customerPhone String?
+  address       String
+  status        OrderStatus   @default(NEW)
+  totalAmount   Decimal       @default(0)
+  orderedAt     DateTime
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items         OrderItem[]
+  syncLogs      SyncLog[]
+}
+
+model OrderItem {
+  id        Int     @id @default(autoincrement())
+  orderId   Int
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  price     Decimal
+  createdAt DateTime @default(now())
+}
+
+model SyncLog {
+  id            Int         @id @default(autoincrement())
+  marketplaceId Int?
+  marketplace   Marketplace? @relation(fields: [marketplaceId], references: [id])
+  orderId       Int?
+  order         Order?      @relation(fields: [orderId], references: [id])
+  type          SyncType
+  status        SyncStatus  @default(PENDING)
+  message       String?
+  payload       String?     // JSON string untuk debugging
+  createdAt     DateTime    @default(now())
+}
